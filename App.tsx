@@ -1,5 +1,5 @@
 import React, { useState, useEffect, ErrorInfo, ReactNode } from 'react';
-import { ScanBarcode, ClipboardList, Calendar, MapPin, User, Package, Home, AlertCircle, Hash, ChevronDown, WifiOff, Download, Settings, Key, CheckCircle } from 'lucide-react';
+import { ScanBarcode, ClipboardList, Calendar, MapPin, User, Package, Home, AlertCircle, Hash, ChevronDown, WifiOff, Download, Settings, Key, CheckCircle, ChevronRight, ChevronUp } from 'lucide-react';
 import FileUpload from './components/FileUpload';
 import Results from './components/Results';
 import { analyzeImage, AnalysisResult, ScannedItem, hasApiKey, setStoredApiKey, removeStoredApiKey } from './services/gemini';
@@ -99,6 +99,8 @@ const AppContent: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   
@@ -147,7 +149,8 @@ const AppContent: React.FC = () => {
       setStoredApiKey(tempApiKey);
       setIsApiKeyMissing(false);
       setShowSettings(false);
-      setError(null); // Clear any previous errors
+      setError(null);
+      setErrorDetails(null);
     }
   };
 
@@ -173,12 +176,15 @@ const AppContent: React.FC = () => {
       variantName: (formData.get('variantName') as string) || "",
     });
     setError(null);
+    setErrorDetails(null);
   };
 
   const handleScanReset = () => {
     setImages(null);
     setResult(null);
     setError(null);
+    setErrorDetails(null);
+    setShowErrorDetails(false);
   };
 
   const handleHome = () => {
@@ -198,10 +204,12 @@ const AppContent: React.FC = () => {
   const processImages = async (imgs: string[]) => {
     setIsProcessing(true);
     setError(null);
+    setErrorDetails(null);
     const uniqueCodes = new Set<string>();
     const allItems: ScannedItem[] = [];
     let processedCount = 0;
-    // Fix: Use 'any' to avoid TS control flow analysis issues with async callbacks
+    
+    // Use 'any' to handle mixed error types safely
     let lastError: any = null;
 
     try {
@@ -246,7 +254,14 @@ const AppContent: React.FC = () => {
             throw new Error("Network error detected. Please check your internet connection.");
          }
 
+         // Capture the actual error message if present
+         if (lastError) {
+             setErrorDetails(lastError.message || String(lastError));
+             throw new Error("Analysis failed. See technical details for more info.");
+         }
+
          // Otherwise, generic no results found
+         setErrorDetails("The AI scanned the image but did not return any recognized items. This usually means the image is blurry, the codes are too small, or the model could not confidently read the text.");
          throw new Error("No recognizable DotCodes found. Please ensure image is clear.");
       }
 
@@ -258,6 +273,9 @@ const AppContent: React.FC = () => {
     } catch (err: any) {
       if (err.message !== "API Key configuration is missing or invalid.") {
          setError(err.message || "An unexpected error occurred.");
+         if (!errorDetails && err.message) {
+            setErrorDetails(err.message);
+         }
       }
       console.error(err);
     } finally {
@@ -524,9 +542,27 @@ const AppContent: React.FC = () => {
 
             {/* Error Message */}
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
-                <AlertCircle size={18} />
-                <span className="font-medium">{error}</span>
+              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertCircle size={18} />
+                  <span className="font-medium">{error}</span>
+                </div>
+                {errorDetails && (
+                   <div className="mt-2 text-xs">
+                      <button 
+                        onClick={() => setShowErrorDetails(!showErrorDetails)}
+                        className="flex items-center gap-1 text-red-700 font-semibold hover:underline mb-1"
+                      >
+                         {showErrorDetails ? <ChevronUp size={12} /> : <ChevronRight size={12} />}
+                         {showErrorDetails ? "Hide Technical Details" : "Show Technical Details"}
+                      </button>
+                      {showErrorDetails && (
+                         <div className="bg-white/50 p-2 rounded border border-red-100 font-mono break-all whitespace-pre-wrap max-h-40 overflow-y-auto">
+                            {errorDetails}
+                         </div>
+                      )}
+                   </div>
+                )}
               </div>
             )}
 

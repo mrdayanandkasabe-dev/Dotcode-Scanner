@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
 
 // Lazy initialization holder
 let ai: GoogleGenAI | null = null;
@@ -72,9 +72,9 @@ export const analyzeImage = async (base64Image: string): Promise<AnalysisResult>
   try {
     const client = getAI();
     
-    // Using gemini-1.5-flash as it is currently the most stable for general API usage
+    // Using gemini-2.0-flash for superior vision capabilities
     const response = await client.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.0-flash',
       contents: {
         parts: [
           {
@@ -84,25 +84,37 @@ export const analyzeImage = async (base64Image: string): Promise<AnalysisResult>
             },
           },
           {
-            text: `Analyze this image which may contain one or multiple product packagings (group photo). 
-            Focus specifically on the "DotCode" or tracking code area on EACH visible product. These are often a matrix of dots accompanied by alphanumeric text (e.g., VR7 HCN...).
-            In the context of these products, they are typically white text on a black rectangular background.
+            text: `Analyze this image of product packaging. 
+            Your goal is to extract ANY and ALL visible alphanumeric tracking codes, DotCodes, or batch codes.
             
-            Find ALL distinct product codes visible in the image. Do not miss any clearly visible codes.
+            Look for:
+            - Matrices of dots with text (DotCodes).
+            - Text starting with "VR", "HCN", or similar alphanumeric patterns.
+            - White text on black backgrounds.
+            - Any unique product identifiers.
+            
+            Do NOT be conservative. If you see text that looks like a code, extract it.
             
             For EACH detected code, extract:
             1. The main alphanumeric tracking code (dotCode).
-            2. The manufacturing date (MFD) if visible near the code.
-            3. The price (MRP) if visible near the code.
-            4. A confidence assessment of the extracted code.
-            5. Any raw text surrounding it.
+            2. The manufacturing date (MFD) if visible.
+            3. The price (MRP) if visible.
+            4. A confidence assessment (High/Medium/Low).
+            5. The raw text read from the label.
             
-            Return the data in RAW JSON format containing a list of items. Do NOT use markdown formatting (no \`\`\`json blocks).`
+            Return the data in RAW JSON format. Do NOT use markdown formatting (no \`\`\`json blocks).`
           },
         ],
       },
       config: {
         responseMimeType: "application/json",
+        // Disable safety settings to prevent blocking of product labels
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        ],
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -142,7 +154,7 @@ export const analyzeImage = async (base64Image: string): Promise<AnalysisResult>
     if (jsonStartIndex === -1 || jsonEndIndex === -1) {
        // If the model refuses to answer or returns just text
        console.error("Invalid response format:", text);
-       throw new Error(`AI did not return a valid JSON object. Response: ${text.substring(0, 50)}...`);
+       throw new Error(`AI did not return a valid JSON object. Raw response: "${text.substring(0, 100)}..."`);
     }
 
     const jsonString = text.substring(jsonStartIndex, jsonEndIndex + 1);
@@ -151,7 +163,7 @@ export const analyzeImage = async (base64Image: string): Promise<AnalysisResult>
       return JSON.parse(jsonString) as AnalysisResult;
     } catch (e) {
       console.error("JSON Parse Error. Raw Text:", text);
-      throw new Error("Failed to parse AI response. The model returned invalid JSON.");
+      throw new Error(`Failed to parse AI response: ${e instanceof Error ? e.message : String(e)}. Raw text length: ${text.length}`);
     }
 
   } catch (error: any) {
@@ -165,7 +177,7 @@ export const analyzeImage = async (base64Image: string): Promise<AnalysisResult>
     if (error.message?.includes("JSON")) throw error;
     
     if (error.status === 403) throw new Error("API Key invalid or restricted (403). Please check your API key.");
-    if (error.status === 404) throw new Error("Model not found (404). The API Key may not have access to this model.");
+    if (error.status === 404) throw new Error("Model not found (404). Check API Key access or model availability.");
     if (error.status === 429) throw new Error("API Quota exceeded (429). You are being rate limited.");
     if (error.status === 400) throw new Error("Bad Request (400). The image might be too large or invalid.");
     
