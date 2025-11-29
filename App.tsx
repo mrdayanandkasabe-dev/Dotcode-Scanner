@@ -330,7 +330,7 @@ const AppContent: React.FC = () => {
               <button 
                 onClick={handleInstallClick}
                 className="bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium px-3 py-2 rounded-lg flex items-center gap-2 transition-colors border border-blue-200 shadow-sm animate-pulse"
-                title="Install App to Desktop"
+                title="Install App"
               >
                 <Download size={18} />
                 <span className="hidden sm:inline">Install App</span>

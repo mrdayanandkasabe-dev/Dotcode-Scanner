@@ -13,9 +13,9 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
-        // DISABLING WORKBOX CACHING TEMPORARILY TO FIX DEPLOYMENT UPDATE ISSUES
+        // RE-ENABLING CACHING FOR PRODUCTION VERCEL DEPLOYMENT
         workbox: {
-          globPatterns: [], // Don't cache files for now
+          globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
           cleanupOutdatedCaches: true,
           skipWaiting: true,
           clientsClaim: true,
