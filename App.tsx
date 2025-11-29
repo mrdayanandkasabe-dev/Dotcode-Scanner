@@ -201,7 +201,8 @@ const AppContent: React.FC = () => {
     const uniqueCodes = new Set<string>();
     const allItems: ScannedItem[] = [];
     let processedCount = 0;
-    let lastError: Error | null = null;
+    // Fix: Use 'any' to avoid TS control flow analysis issues with async callbacks
+    let lastError: any = null;
 
     try {
       // Process images concurrently
@@ -235,13 +236,13 @@ const AppContent: React.FC = () => {
 
       if (processedCount === 0 && imgs.length > 0) {
          // Priority Check: Did we fail because of the API Key?
-         if (lastError && ((lastError as any).code === "MISSING_API_KEY" || lastError.message.includes("API Key"))) {
+         if (lastError && (lastError.code === "MISSING_API_KEY" || lastError.message?.includes("API Key"))) {
             setIsApiKeyMissing(true); // Trigger Setup Screen
             throw new Error("API Key configuration is missing or invalid.");
          }
          
          // Check for network error explicitly
-         if (lastError?.message.includes("fetch") || lastError?.message.includes("network")) {
+         if (lastError?.message?.includes("fetch") || lastError?.message?.includes("network")) {
             throw new Error("Network error detected. Please check your internet connection.");
          }
 
