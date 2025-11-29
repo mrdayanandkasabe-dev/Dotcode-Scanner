@@ -1,8 +1,8 @@
 import React, { useState, useEffect, ErrorInfo, ReactNode } from 'react';
-import { ScanBarcode, ClipboardList, Calendar, MapPin, User, Package, Home, AlertCircle, Hash, ChevronDown, WifiOff, Download } from 'lucide-react';
+import { ScanBarcode, ClipboardList, Calendar, MapPin, User, Package, Home, AlertCircle, Hash, ChevronDown, WifiOff, Download, Settings, Key, CheckCircle } from 'lucide-react';
 import FileUpload from './components/FileUpload';
 import Results from './components/Results';
-import { analyzeImage, AnalysisResult, ScannedItem } from './services/gemini';
+import { analyzeImage, AnalysisResult, ScannedItem, hasApiKey, setStoredApiKey, removeStoredApiKey } from './services/gemini';
 
 interface ErrorBoundaryProps {
   children?: ReactNode;
@@ -101,8 +101,18 @@ const AppContent: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  
+  // API Key State
+  const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [tempApiKey, setTempApiKey] = useState("");
 
   useEffect(() => {
+    // Check for API key on mount
+    if (!hasApiKey()) {
+      setIsApiKeyMissing(true);
+    }
+
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
 
@@ -130,6 +140,22 @@ const AppContent: React.FC = () => {
     if (outcome === 'accepted') {
       setDeferredPrompt(null);
     }
+  };
+
+  const handleSaveApiKey = () => {
+    if (tempApiKey.trim()) {
+      setStoredApiKey(tempApiKey);
+      setIsApiKeyMissing(false);
+      setShowSettings(false);
+      setError(null); // Clear any previous errors
+    }
+  };
+
+  const handleClearApiKey = () => {
+    removeStoredApiKey();
+    setIsApiKeyMissing(!hasApiKey()); // Re-check (might still be env var)
+    setTempApiKey("");
+    window.location.reload(); // Reload to ensure clean state
   };
 
   const handleSessionSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -209,8 +235,9 @@ const AppContent: React.FC = () => {
 
       if (processedCount === 0 && imgs.length > 0) {
          // Priority Check: Did we fail because of the API Key?
-         if (lastError?.message.includes("API Key is missing")) {
-            throw lastError;
+         if (lastError && ((lastError as any).code === "MISSING_API_KEY" || lastError.message.includes("API Key"))) {
+            setIsApiKeyMissing(true); // Trigger Setup Screen
+            throw new Error("API Key configuration is missing or invalid.");
          }
          
          // Check for network error explicitly
@@ -219,7 +246,7 @@ const AppContent: React.FC = () => {
          }
 
          // Otherwise, generic no results found
-         throw new Error("No recognizable DotCodes found in the provided images. Please ensure the image is clear and codes are visible.");
+         throw new Error("No recognizable DotCodes found. Please ensure image is clear.");
       }
 
       setResult({
@@ -228,12 +255,54 @@ const AppContent: React.FC = () => {
       });
 
     } catch (err: any) {
-      setError(err.message || "An unexpected error occurred. Please try again.");
+      if (err.message !== "API Key configuration is missing or invalid.") {
+         setError(err.message || "An unexpected error occurred.");
+      }
       console.error(err);
     } finally {
       setIsProcessing(false);
     }
   };
+
+  // RENDER: API Key Setup Screen
+  if (isApiKeyMissing) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans">
+        <div className="bg-white max-w-md w-full rounded-2xl shadow-xl border border-gray-100 p-8 text-center">
+          <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-6 text-blue-600">
+            <Key size={32} />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Setup Required</h1>
+          <p className="text-gray-500 mb-6">
+            To use the DotCode Scanner, you need to provide a Google Gemini API Key. This will be stored locally on your device.
+          </p>
+          
+          <div className="text-left mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Enter Gemini API Key</label>
+            <input 
+              type="text" 
+              value={tempApiKey}
+              onChange={(e) => setTempApiKey(e.target.value)}
+              placeholder="AIzaSy..."
+              className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+            />
+            <p className="text-xs text-gray-400 mt-2">
+              Don't have a key? <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Get one here</a>
+            </p>
+          </div>
+
+          <button 
+            onClick={handleSaveApiKey}
+            disabled={!tempApiKey.trim()}
+            className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            <CheckCircle size={20} />
+            Save & Continue
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
@@ -254,8 +323,8 @@ const AppContent: React.FC = () => {
           </button>
           
           {/* Top Right Actions */}
-          <div className="flex items-center gap-3">
-            {/* Install Button (Only visible if browser supports PWA install) */}
+          <div className="flex items-center gap-2">
+            {/* Install Button */}
             {deferredPrompt && (
               <button 
                 onClick={handleInstallClick}
@@ -277,8 +346,31 @@ const AppContent: React.FC = () => {
                 <span className="hidden sm:inline">Home</span>
               </button>
             )}
+
+            {/* Settings Button */}
+            <button 
+              onClick={() => setShowSettings(!showSettings)}
+              className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Settings"
+            >
+              <Settings size={20} />
+            </button>
           </div>
         </div>
+
+        {/* Settings Dropdown */}
+        {showSettings && (
+          <div className="absolute right-4 top-16 bg-white shadow-xl border border-gray-200 rounded-xl p-4 w-64 z-50">
+             <h3 className="font-bold text-gray-900 mb-2">Settings</h3>
+             <button 
+                onClick={handleClearApiKey}
+                className="w-full text-left text-sm text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors flex items-center gap-2"
+             >
+                <Key size={16} />
+                Reset/Change API Key
+             </button>
+          </div>
+        )}
         
         {/* Offline Banner */}
         {!isOnline && (

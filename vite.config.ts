@@ -48,7 +48,8 @@ export default defineConfig(({ mode }) => {
       })
     ],
     define: {
-      // Prioritize process.env.API_KEY (System/Netlify env) -> env.API_KEY (.env file) -> env.VITE_API_KEY
+      // Prioritize process.env.API_KEY -> env.API_KEY -> env.VITE_API_KEY -> Default to ""
+      // This empty string default is CRITICAL for Vercel builds where keys might be missing
       'process.env.API_KEY': JSON.stringify(process.env.API_KEY || env.API_KEY || env.VITE_API_KEY || ''),
     },
   };
