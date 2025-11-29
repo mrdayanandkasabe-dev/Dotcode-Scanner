@@ -1,0 +1,5 @@
+{
+  "name": "DotCode Scanner",
+  "description": "An AI-powered tool to read multiple DotCodes and tracking information from group product photos using the Gemini API.",
+  "requestFramePermissions": []
+}
