@@ -1,5 +1,5 @@
-import React, { useState, ErrorInfo, ReactNode } from 'react';
-import { ScanBarcode, ClipboardList, Calendar, MapPin, User, Package, Home, AlertCircle, Hash, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, ErrorInfo, ReactNode } from 'react';
+import { ScanBarcode, ClipboardList, Calendar, MapPin, User, Package, Home, AlertCircle, Hash, ChevronDown, WifiOff, Download } from 'lucide-react';
 import FileUpload from './components/FileUpload';
 import Results from './components/Results';
 import { analyzeImage, AnalysisResult, ScannedItem } from './services/gemini';
@@ -99,9 +99,45 @@ const AppContent: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Listen for PWA install event
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   const handleSessionSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!isOnline) {
+      setError("Internet connection is required to start a session.");
+      return;
+    }
     const formData = new FormData(e.currentTarget);
     setSessionInfo({
       date: (formData.get('date') as string) || new Date().toISOString().split('T')[0],
@@ -110,6 +146,7 @@ const AppContent: React.FC = () => {
       supervisorName: (formData.get('supervisorName') as string) || "",
       variantName: (formData.get('variantName') as string) || "",
     });
+    setError(null);
   };
 
   const handleScanReset = () => {
@@ -124,6 +161,10 @@ const AppContent: React.FC = () => {
   };
 
   const handleImageSelect = async (selectedImages: string[]) => {
+    if (!isOnline) {
+      setError("Cannot analyze images without an internet connection.");
+      return;
+    }
     setImages(selectedImages);
     processImages(selectedImages);
   };
@@ -171,6 +212,11 @@ const AppContent: React.FC = () => {
          if (lastError?.message.includes("API Key is missing")) {
             throw lastError;
          }
+         
+         // Check for network error explicitly
+         if (lastError?.message.includes("fetch") || lastError?.message.includes("network")) {
+            throw new Error("Network error detected. Please check your internet connection.");
+         }
 
          // Otherwise, generic no results found
          throw new Error("No recognizable DotCodes found in the provided images. Please ensure the image is clear and codes are visible.");
@@ -209,6 +255,18 @@ const AppContent: React.FC = () => {
           
           {/* Top Right Actions */}
           <div className="flex items-center gap-3">
+            {/* Install Button (Only visible if browser supports PWA install) */}
+            {deferredPrompt && (
+              <button 
+                onClick={handleInstallClick}
+                className="bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium px-3 py-2 rounded-lg flex items-center gap-2 transition-colors border border-blue-200 shadow-sm animate-pulse"
+                title="Install App to Desktop"
+              >
+                <Download size={18} />
+                <span className="hidden sm:inline">Install App</span>
+              </button>
+            )}
+
             {sessionInfo && (
               <button 
                 onClick={handleHome}
@@ -221,6 +279,14 @@ const AppContent: React.FC = () => {
             )}
           </div>
         </div>
+        
+        {/* Offline Banner */}
+        {!isOnline && (
+          <div className="bg-red-600 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2">
+            <WifiOff size={16} />
+            <span>No Internet Connection. Scanning requires online access to AI Cloud.</span>
+          </div>
+        )}
       </header>
 
       {/* Main Content */}
@@ -327,9 +393,10 @@ const AppContent: React.FC = () => {
 
               <button 
                 type="submit"
-                className="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 mt-4"
+                disabled={!isOnline}
+                className="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 mt-4 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                Start Scanning
+                {isOnline ? "Start Scanning" : "Offline - Scanning Unavailable"}
               </button>
             </form>
           </div>
@@ -373,9 +440,17 @@ const AppContent: React.FC = () => {
             {/* Main Action Area */}
             {!result && !isProcessing && (
               <div className="flex flex-col items-center gap-6 mt-8">
-                 <div className="w-full max-w-md">
-                   <FileUpload onFileSelect={handleImageSelect} />
-                 </div>
+                 {isOnline ? (
+                   <div className="w-full max-w-md">
+                     <FileUpload onFileSelect={handleImageSelect} />
+                   </div>
+                 ) : (
+                   <div className="text-center py-10 opacity-60">
+                     <WifiOff size={48} className="mx-auto mb-4 text-gray-400" />
+                     <p className="text-lg font-medium text-gray-600">You are currently offline.</p>
+                     <p className="text-gray-500">Please connect to the internet to upload and scan images.</p>
+                   </div>
+                 )}
               </div>
             )}
 

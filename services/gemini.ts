@@ -9,9 +9,10 @@ const getAI = () => {
     // We assume it is pre-configured, valid, and accessible.
     const apiKey = process.env.API_KEY;
     
-    if (!apiKey) {
+    // Strict check for empty string or undefined which happens if Netlify build didn't see the key
+    if (!apiKey || apiKey === "" || apiKey === "undefined") {
       console.error("API Key is missing from process.env.API_KEY");
-      throw new Error("API Key is missing. Go to Netlify > Site configuration > Environment variables and add 'API_KEY'. Then Redeploy.");
+      throw new Error("CRITICAL: API Key is missing. Go to Netlify > Site configuration > Environment variables. Add 'API_KEY' with your value. Then Retry Deploy.");
     }
     
     ai = new GoogleGenAI({ apiKey });
@@ -39,8 +40,9 @@ export const analyzeImage = async (base64Image: string): Promise<AnalysisResult>
   try {
     const client = getAI();
     
+    // Using gemini-1.5-flash as it is currently the most stable for general API usage
     const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-1.5-flash',
       contents: {
         parts: [
           {
@@ -106,7 +108,9 @@ export const analyzeImage = async (base64Image: string): Promise<AnalysisResult>
     const jsonEndIndex = text.lastIndexOf('}');
     
     if (jsonStartIndex === -1 || jsonEndIndex === -1) {
-       throw new Error("No JSON object found in response");
+       // If the model refuses to answer or returns just text
+       console.error("Invalid response format:", text);
+       throw new Error(`AI did not return a valid JSON object. Response: ${text.substring(0, 50)}...`);
     }
 
     const jsonString = text.substring(jsonStartIndex, jsonEndIndex + 1);
@@ -126,6 +130,7 @@ export const analyzeImage = async (base64Image: string): Promise<AnalysisResult>
     if (error.message?.includes("JSON")) throw error;
     
     if (error.status === 403) throw new Error("API Key invalid or restricted (403). Please check your Netlify settings.");
+    if (error.status === 404) throw new Error("Model not found (404). The API Key may not have access to this model.");
     if (error.status === 429) throw new Error("API Quota exceeded (429). You are being rate limited.");
     if (error.status === 400) throw new Error("Bad Request (400). The image might be too large or invalid.");
     
